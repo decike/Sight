@@ -1,1 +1,1 @@
-// Root build.gradle intentionally minimal. Plugin versions are declared in settings.gradle.
+// Root build.gradle intentionally minimal. Plugin versions and repos are in settings.gradle.

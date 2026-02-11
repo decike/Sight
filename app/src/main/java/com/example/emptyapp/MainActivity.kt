@@ -1,4 +1,4 @@
-package com.example.emptyapp
+package com.example.sight
 
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
