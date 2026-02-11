@@ -17,7 +17,10 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // 注意：Groovy DSL 正确用法为 minifyEnabled，而不是 isMinifyEnabled
+            minifyEnabled false
+            // 如需添加 proguard 文件（可选）：
+            // proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }
