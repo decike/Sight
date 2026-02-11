@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.EmptyApp" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+    <style name="Theme.Sight" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
         <item name="colorPrimary">?attr/colorPrimary</item>
         <item name="colorOnPrimary">?attr/colorOnPrimary</item>
     </style>
