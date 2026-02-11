@@ -1,6 +1,6 @@
 plugins {
     id 'com.android.application'
-    id 'kotlin-android' // Kotlin used for a tiny activity
+    id 'org.jetbrains.kotlin.android'
 }
 
 android {
