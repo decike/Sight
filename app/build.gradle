@@ -1,0 +1,31 @@
+plugins {
+    id 'com.android.application'
+    id 'kotlin-android' // Kotlin used for a tiny activity
+}
+
+android {
+    namespace 'com.example.emptyapp'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.example.emptyapp"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "0.1"
+    }
+
+    buildTypes {
+        release {
+            // No code shrinking for this sample
+            isMinifyEnabled = false
+        }
+    }
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.10"
+    implementation 'androidx.core:core-ktx:1.10.1'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.9.0'
+}
