@@ -6,7 +6,6 @@ import androidx.appcompat.app.AppCompatActivity
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // An intentionally empty layout: the app will open to a blank screen
         setContentView(R.layout.activity_main)
     }
 }

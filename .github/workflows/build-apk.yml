@@ -33,25 +33,17 @@ jobs:
 
       - name: Build Release APK
         run: |
-          gradle assembleRelease --no-daemon
+          gradle assembleRelease --no-daemon --stacktrace
 
       - name: Locate APK
         run: |
           echo "Find APKs:"
           find . -type f -name "*.apk" -print
 
-      - name: Create GitHub Release
-        id: create_release
+      - name: Create GitHub Release and upload APK
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
+          files: app/build/outputs/apk/release/app-release-unsigned.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload APK to Release
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./app/build/outputs/apk/release/app-release-unsigned.apk
-          asset_name: app-release-unsigned.apk
-          asset_content_type: application/vnd.android.package-archive
