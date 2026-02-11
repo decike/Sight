@@ -5,6 +5,9 @@ pluginManagement {
         gradlePluginPortal()
     }
     plugins {
+        // Android Gradle Plugin 固定为与 Gradle 9 兼容的 8.4.x（示例用 8.4.2）
+        id "com.android.application" version "8.4.2"
+        // Kotlin 插件版本，和 app/build.gradle 中使用的 kotlin stdlib 保持一致
         id "org.jetbrains.kotlin.android" version "1.9.22"
     }
 }
