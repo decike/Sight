@@ -32,20 +32,18 @@ jobs:
         run: |
           gradle assembleRelease --no-daemon --stacktrace
 
-      - name: Locate APK
-        run: |
-          echo "Find APKs:"
-          find . -type f -name "*.apk" -print
-
-      - name: Copy and rename APK for release
+      - name: Locate and copy APK for release
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release-unsigned.apk dist/Sight-${{ github.ref_name }}-app-release-unsigned.apk || true
+          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          echo "Found APK: $APK_PATH"
+          cp "$APK_PATH" "dist/Sight-${{ github.ref_name }}.apk"
+
 
       - name: Create GitHub Release and upload APK
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
-          files: dist/Sight-${{ github.ref_name }}-app-release-unsigned.apk
+          files: dist/Sight-${{ github.ref_name }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
