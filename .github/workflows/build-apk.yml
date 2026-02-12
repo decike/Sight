@@ -35,7 +35,7 @@ jobs:
         shell: bash
 
       - name: Build Release APK
-        run: gradlew assembleRelease --no-daemon --stacktrace
+        run: gradle assembleRelease --no-daemon --stacktrace
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}   # 用于判断是否启用 release 签名
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
