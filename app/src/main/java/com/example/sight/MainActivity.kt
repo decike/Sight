@@ -9,6 +9,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -51,6 +52,9 @@ class MainActivity : AppCompatActivity() {
         btnStartStop = findViewById(R.id.btnStartStop)
         btnSettings = findViewById(R.id.btnSettings)
         llContainer = findViewById(R.id.llContainer)
+
+        // 关键：允许子 View 在父容器之外绘制，避免箭头被裁剪
+        disableClippingForViewAndParents(llContainer)
 
         insertCountdownTextView() // create and insert countdown view
 
@@ -109,6 +113,9 @@ class MainActivity : AppCompatActivity() {
                 ).apply {
                     topMargin = if (i == 0) 5 else baseSizePx // first row distance = 5px
                 }
+                // 允许 overlay 超出本行范围
+                clipChildren = false
+                clipToPadding = false
             }
 
             val eView = EView(this).apply {
@@ -121,7 +128,7 @@ class MainActivity : AppCompatActivity() {
                 visibility = View.GONE
                 // default overlay size = E size (won't push anything)
                 layoutParams = FrameLayout.LayoutParams(baseSizePx, baseSizePx).apply {
-                    // initial position; we'll reposition it when showing answers
+                    // initial gravity center vertical; we will reposition via arrow.x / arrow.y
                     gravity = Gravity.CENTER_VERTICAL
                 }
             }
@@ -141,6 +148,8 @@ class MainActivity : AppCompatActivity() {
                 // hide arrows (GONE) and reset arrow overlay size to E size
                 rowData.forEach { row ->
                     row.arrow.visibility = View.GONE
+                    row.arrow.scaleX = 1f
+                    row.arrow.scaleY = 1f
                     val lp = row.arrow.layoutParams
                     lp.width = row.eView.sizePx
                     lp.height = row.eView.sizePx
@@ -159,10 +168,12 @@ class MainActivity : AppCompatActivity() {
                 showingAnswer = true
                 handler.postDelayed(this, periodMs)
             } else {
-                // show arrows overlayed; arrows size = 3 * E size (will overlay, not push)
+                // show arrows overlayed; arrows layout size = 3 * E size (overlay, won't push E)
                 rowData.forEachIndexed { idx, r ->
                     r.arrow.visibility = View.VISIBLE
                     r.arrow.directionDeg = r.eView.rotationDeg
+
+                    // set layout size to 3x so the view's drawable area is large enough
                     val size = r.eView.sizePx * 3
                     val lp = r.arrow.layoutParams
                     lp.width = size
@@ -171,11 +182,9 @@ class MainActivity : AppCompatActivity() {
                     r.arrow.requestLayout()
 
                     // Position arrow relative to the E center:
-                    // compute eView left within the row frame (centered)
-                    // eLeft = (container.width - eWidth)/2
+                    // if container not measured yet, post to run after layout
                     val container = r.container
-                    // if container.width is 0 it's not yet measured; post a runnable
-                    if (container.width == 0) {
+                    if (container.width == 0 || r.eView.width == 0) {
                         container.post {
                             positionArrow(r, idx, size)
                         }
@@ -197,7 +206,9 @@ class MainActivity : AppCompatActivity() {
         val e = row.eView
         // center coordinates and E left within container
         val containerW = container.width
+        val containerH = container.height
         val eW = e.width
+        val eH = e.height
         if (containerW == 0 || eW == 0) return
         val eLeft = (containerW - eW) / 2 // left position of E within container
         // left arrows for idx 0,2,4,6
@@ -212,6 +223,9 @@ class MainActivity : AppCompatActivity() {
             val x = (eLeft + eW).toFloat()
             arrow.x = x
         }
+        // vertically center the arrow drawing (arrowSize is the layout/drawing size)
+        val y = ((containerH - arrowSize) / 2).toFloat()
+        arrow.y = y
     }
 
     private val countdownRunnable = object : Runnable {
@@ -275,7 +289,7 @@ class MainActivity : AppCompatActivity() {
                     endToStart = btnSettings.id
                     // align bottom with the start button bottom
                     bottomToBottom = btnStartStop.id
-                    // tiny margin downward so it visually sits a bit lower (0 dp is fine)
+                    // tiny margin downward so it visually sits a bit lower
                     topMargin = dpToPx(2)
                 }
                 parent.addView(tv, lp)
@@ -296,7 +310,7 @@ class MainActivity : AppCompatActivity() {
                     tv.gravity = Gravity.CENTER
                     tvCountdown = tv
                 } else {
-                    // som fallback, add to container
+                    // some fallback, add to container
                     llContainer.addView(tv, 0)
                     tvCountdown = tv
                 }
@@ -309,5 +323,25 @@ class MainActivity : AppCompatActivity() {
 
     private fun dpToPx(dp: Int): Int {
         return (dp * resources.displayMetrics.density).roundToInt()
+    }
+
+    /**
+     * Disable clipping (clipChildren/clipToPadding) for a view and all its ancestor ViewGroups.
+     * This ensures large overlay children (the arrows) won't be cropped by parent views.
+     */
+    private fun disableClippingForViewAndParents(v: View) {
+        var p: ViewParent? = v.parent
+        // also set for the view itself (if it's a ViewGroup)
+        if (v is ViewGroup) {
+            v.clipChildren = false
+            v.clipToPadding = false
+        }
+        while (p is ViewGroup) {
+            try {
+                p.clipChildren = false
+                p.clipToPadding = false
+            } catch (_: Exception) { /* ignore */ }
+            p = p.parent
+        }
     }
 }
