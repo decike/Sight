@@ -10,7 +10,6 @@ import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewParent
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -42,6 +41,9 @@ class MainActivity : AppCompatActivity() {
     private var nextToggleTimeMs: Long = 0L
     private val countdownUpdateInterval = 100L // every 0.1s
 
+    // overlay container to hold arrows so they won't be clipped by row parents
+    private lateinit var overlayContainer: FrameLayout
+
     data class Row(val container: FrameLayout, val eView: EView, val arrow: ArrowView)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,8 +56,11 @@ class MainActivity : AppCompatActivity() {
         btnSettings = findViewById(R.id.btnSettings)
         llContainer = findViewById(R.id.llContainer)
 
-        // 关键：允许子 View 在父容器之外绘制，避免箭头被裁剪
+        // try to disable clipping on content view ancestors (best-effort)
         disableClippingForViewAndParents(llContainer)
+
+        // create an overlay container and add it above activity content so arrows can be drawn there
+        setupOverlayContainer()
 
         insertCountdownTextView() // create and insert countdown view
 
@@ -84,7 +89,7 @@ class MainActivity : AppCompatActivity() {
                 r.eView.layoutParams.height = baseSizePx
                 r.eView.requestLayout()
 
-                // arrow default size equals E size so overlay doesn't change row height
+                // arrow default layout size equals E size so overlay won't change row height
                 val lpArrow = r.arrow.layoutParams
                 lpArrow.width = baseSizePx
                 lpArrow.height = baseSizePx
@@ -100,12 +105,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Build each row as a FrameLayout (overlay). EView is centered; ArrowView is an overlay
-     * positioned at runtime to left or right of E without affecting E's position.
+     * Build each row as a FrameLayout (overlay pattern for E); ArrowView instances are added to
+     * overlayContainer instead of being children of the row, so arrows never push/move E and
+     * are not clipped by row parents.
      */
     private fun buildRows() {
         llContainer.removeAllViews()
         rowData.clear()
+
         for (i in 0 until 8) {
             val rowFrame = FrameLayout(this).apply {
                 layoutParams = LinearLayout.LayoutParams(
@@ -114,30 +121,30 @@ class MainActivity : AppCompatActivity() {
                 ).apply {
                     topMargin = if (i == 0) 5 else baseSizePx // first row distance = 5px
                 }
-                // 允许 overlay 超出本行范围
+                // allow overlay to extend visually (defensive)
                 clipChildren = false
                 clipToPadding = false
             }
 
             val eView = EView(this).apply {
                 sizePx = baseSizePx
-                // center within FrameLayout
                 layoutParams = FrameLayout.LayoutParams(baseSizePx, baseSizePx, Gravity.CENTER)
             }
 
+            // create arrow, but DO NOT add to rowFrame — add to overlayContainer
             val arrow = ArrowView(this).apply {
                 visibility = View.GONE
-                // default overlay size = E size (won't push anything)
-                layoutParams = FrameLayout.LayoutParams(baseSizePx, baseSizePx).apply {
-                    // initial position; we'll reposition it when showing answers
-                    gravity = Gravity.CENTER_VERTICAL
-                }
+                // layout size initially equal to E; will be resized when showing answers
+                layoutParams = FrameLayout.LayoutParams(baseSizePx, baseSizePx)
+                // put it on top layer
+                elevation = 100f
             }
 
             rowFrame.addView(eView)
-            rowFrame.addView(arrow)
-
             llContainer.addView(rowFrame)
+            // add arrow to overlay (top-level) so it's never clipped by rows
+            overlayContainer.addView(arrow)
+
             rowData.add(Row(rowFrame, eView, arrow))
         }
     }
@@ -146,7 +153,7 @@ class MainActivity : AppCompatActivity() {
         override fun run() {
             if (!running) return
             if (!showingAnswer) {
-                // hide arrows (GONE) and reset arrow overlay size to E size
+                // hide arrows (GONE) and reset arrow layout to E size
                 rowData.forEach { row ->
                     row.arrow.visibility = View.GONE
                     row.arrow.scaleX = 1f
@@ -169,12 +176,12 @@ class MainActivity : AppCompatActivity() {
                 showingAnswer = true
                 handler.postDelayed(this, periodMs)
             } else {
-                // show arrows overlayed; arrows layout size = 3 * E size (overlay, won't push E)
+                // show answers overlayed; arrow drawing area = 3 * E size
                 rowData.forEachIndexed { idx, r ->
                     r.arrow.visibility = View.VISIBLE
                     r.arrow.directionDeg = r.eView.rotationDeg
 
-                    // set layout size to 3x so the view's drawable area is large enough
+                    // set layout size to 3x so the arrow has enough drawing area (still in overlay)
                     val size = r.eView.sizePx * 3
                     val lp = r.arrow.layoutParams
                     lp.width = size
@@ -182,16 +189,20 @@ class MainActivity : AppCompatActivity() {
                     r.arrow.layoutParams = lp
                     r.arrow.requestLayout()
 
-                    // Position arrow relative to the E center:
-                    // if container not measured yet, post to run after layout
-                    val container = r.container
-                    if (container.width == 0 || r.eView.width == 0) {
-                        container.post {
-                            positionArrow(r, idx, size)
+                    // compute arrow position relative to overlay and set it
+                    // if views not measured yet, post to run after layout
+                    val eView = r.eView
+                    if (eView.width == 0 || overlayContainer.width == 0) {
+                        overlayContainer.post {
+                            positionArrowInOverlay(r, idx, size)
                         }
                     } else {
-                        positionArrow(r, idx, size)
+                        positionArrowInOverlay(r, idx, size)
                     }
+
+                    // ensure arrow is on top
+                    r.arrow.bringToFront()
+                    r.arrow.invalidate()
                 }
 
                 nextToggleTimeMs = SystemClock.uptimeMillis() + periodMs
@@ -201,32 +212,48 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // position arrow overlay left or right of the centered E within the row frame
-    private fun positionArrow(row: Row, idx: Int, arrowSize: Int) {
-        val container = row.container
-        val e = row.eView
-        // center coordinates and E left within container
-        val containerW = container.width
-        val containerH = container.height
-        val eW = e.width
-        val eH = e.height
-        if (containerW == 0 || eW == 0) return
-        val eLeft = (containerW - eW) / 2 // left position of E within container
-        // left arrows for idx 0,2,4,6
-        val isLeft = (idx % 2 == 0)
+    /**
+     * Position arrow inside overlayContainer based on eView screen coordinates.
+     * idx decides left/right placement. arrowSize is the layout/draw size (px).
+     */
+    private fun positionArrowInOverlay(row: Row, idx: Int, arrowSize: Int) {
+        val eView = row.eView
         val arrow = row.arrow
-        if (isLeft) {
-            // put arrow to the left of E: x = eLeft - arrowSize
-            val x = (eLeft - arrowSize).toFloat()
-            arrow.x = x
+
+        // get absolute positions on screen
+        val eLoc = IntArray(2)
+        val ovLoc = IntArray(2)
+        eView.getLocationOnScreen(eLoc)
+        overlayContainer.getLocationOnScreen(ovLoc)
+
+        // eView top-left in overlay coordinates
+        val eLeftInOverlay = (eLoc[0] - ovLoc[0]).toFloat()
+        val eTopInOverlay = (eLoc[1] - ovLoc[1]).toFloat()
+
+        val eW = eView.width
+        val eH = eView.height
+
+        val isLeft = (idx % 2 == 0)
+
+        val x: Float = if (isLeft) {
+            // place arrow so its right edge aligns with eView left
+            eLeftInOverlay - arrowSize.toFloat()
         } else {
-            // put arrow to right: x = eLeft + eW
-            val x = (eLeft + eW).toFloat()
-            arrow.x = x
+            // place arrow so its left edge aligns with eView right
+            eLeftInOverlay + eW.toFloat()
         }
-        // vertically center the arrow drawing (arrowSize is the layout/drawing size)
-        val y = ((containerH - arrowSize) / 2).toFloat()
+
+        // vertical center the arrow relative to eView
+        val y = eTopInOverlay + (eH - arrowSize) / 2.0f
+
+        // apply positions
+        arrow.x = x
         arrow.y = y
+
+        // ensure arrow visible and on top
+        arrow.visibility = View.VISIBLE
+        arrow.bringToFront()
+        arrow.invalidate()
     }
 
     private val countdownRunnable = object : Runnable {
@@ -290,7 +317,6 @@ class MainActivity : AppCompatActivity() {
                     endToStart = btnSettings.id
                     // align bottom with the start button bottom
                     bottomToBottom = btnStartStop.id
-                    // tiny margin downward so it visually sits a bit lower
                     topMargin = dpToPx(2)
                 }
                 parent.addView(tv, lp)
@@ -311,13 +337,11 @@ class MainActivity : AppCompatActivity() {
                     tv.gravity = Gravity.CENTER
                     tvCountdown = tv
                 } else {
-                    // some fallback, add to container
                     llContainer.addView(tv, 0)
                     tvCountdown = tv
                 }
             }
         } catch (ex: Exception) {
-            // ignore but ensure tvCountdown nullable
             tvCountdown = null
         }
     }
@@ -327,26 +351,45 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Disable clipping (clipChildren/clipToPadding) for a view and all its ancestor ViewGroups.
-     * This ensures large overlay children (the arrows) won't be cropped by parent views.
+     * Create overlayContainer as a top-level FrameLayout (match_parent) and add it
+     * to the activity's content view so overlay children (arrows) draw above everything.
+     */
+    private fun setupOverlayContainer() {
+        // get the root content view (the activity's content)
+        val content = findViewById<ViewGroup>(android.R.id.content)
+        // create overlay
+        overlayContainer = FrameLayout(this).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            clipChildren = false
+            clipToPadding = false
+            // make sure it's on top (added last)
+            isClickable = false
+        }
+        // add overlay as the last child so it sits above the activity layout
+        content.addView(overlayContainer)
+    }
+
+    /**
+     * Best-effort: disable clipping for v (if ViewGroup) and for its ancestor viewgroups.
+     * Some platform parents may still clip (uncommon), but overlay solves most cases.
      */
     private fun disableClippingForViewAndParents(v: View) {
-        // make sure the view itself (if a ViewGroup) does not clip
         if (v is ViewGroup) {
             try {
                 v.clipChildren = false
                 v.clipToPadding = false
-            } catch (_: Exception) { /* ignore */ }
+            } catch (_: Exception) { }
         }
-
-        // iterate up the parent chain; for each ViewGroup disable clipping
-        var parent: ViewParent? = v.parent
+        var parent = v.parent
         while (parent is ViewGroup) {
             try {
                 parent.clipChildren = false
                 parent.clipToPadding = false
-            } catch (_: Exception) { /* ignore */ }
-            // move up: parent may be a View (subclass of ViewParent) so cast to View to access .parent
+            } catch (_: Exception) { }
+            // climb up
             parent = (parent as? View)?.parent
         }
     }
