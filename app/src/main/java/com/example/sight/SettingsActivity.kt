@@ -3,9 +3,7 @@ package com.example.sight
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
-import android.text.Editable
 import android.text.InputType
-import android.text.TextWatcher
 import android.view.Gravity
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -14,6 +12,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import kotlin.math.roundToInt
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -24,10 +23,13 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var btnMinus: Button
     private lateinit var btnSave: Button
 
-    // 像素输入框
+    // 像素输入框 与 确认按钮
     private lateinit var edtPixel: EditText
-    // 像素确认按钮
     private lateinit var btnPixelConfirm: Button
+
+    // 时长输入（题目/答案，单位：秒）
+    private lateinit var edtQuestionSec: EditText
+    private lateinit var edtAnswerSec: EditText
 
     // 屏幕短边（像素）
     private val screenShortSide: Int by lazy {
@@ -42,10 +44,15 @@ class SettingsActivity : AppCompatActivity() {
         val savedSize = prefs.getInt("e_size_px", 200)
         val initialSize = savedSize.coerceAtMost(screenShortSide)
 
+        // 时长默认值（秒）
+        val defaultQuestionSec = prefs.getFloat("duration_question_s", 10f)
+        val defaultAnswerSec = prefs.getFloat("duration_answer_s", 10f)
+
         // 根布局：垂直 LinearLayout，所有子 View 水平居中
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
+            val pad = dpToPx(12)
+            setPadding(pad, pad, pad, pad)
             gravity = Gravity.CENTER_HORIZONTAL
         }
 
@@ -61,13 +68,13 @@ class SettingsActivity : AppCompatActivity() {
         // --- 像素输入行（标签 + 输入框 + 确认按钮）---
         val pixelRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = 16
-                bottomMargin = 16
+                topMargin = dpToPx(12)
+                bottomMargin = dpToPx(12)
             }
         }
 
@@ -80,7 +87,7 @@ class SettingsActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_NUMBER   // 只能输入整数
             setText(initialSize.toString())
             imeOptions = EditorInfo.IME_ACTION_DONE
-            // 按 Done 收起键盘
+            // 按 Done 收起键盘，并清除焦点
             setOnEditorActionListener { v, actionId, _ ->
                 if (actionId == EditorInfo.IME_ACTION_DONE) {
                     hideKeyboard()
@@ -88,28 +95,30 @@ class SettingsActivity : AppCompatActivity() {
                     true
                 } else false
             }
-            // 确认由按钮触发
-            onFocusChangeListener = null
+            // 给输入框设置一个合理的宽度（wrap_content 有时太窄）
+            layoutParams = LinearLayout.LayoutParams(dpToPx(80), LinearLayout.LayoutParams.WRAP_CONTENT)
+            gravity = Gravity.CENTER
         }
 
+        // Pixel 确认按钮（显式设置宽高，缩小尺寸）
         btnPixelConfirm = Button(this).apply {
             text = "确认"
-            // 文字大小由默认值改为 12sp
-            setTextSize(12f)
-            // 内边距从默认大幅减小，单位 dp 转 px
+            // 文字大小与内边距都缩小
+            textSize = 12f
             val density = resources.displayMetrics.density
-            setPadding(
-                (8 * density).toInt(),
-                (4 * density).toInt(),
-                (8 * density).toInt(),
-                (4 * density).toInt()
-            )
-            // 清除系统默认的最小宽高，允许按钮收缩
+            setPadding((6 * density).toInt(), (3 * density).toInt(), (6 * density).toInt(), (3 * density).toInt())
+            // 清除默认 min，允许更小
             minWidth = 0
             minHeight = 0
 
+            // 显式 LayoutParams：把按钮显式缩小（例如 44x28 dp）
+            val w = dpToPx(44)
+            val h = dpToPx(28)
+            layoutParams = LinearLayout.LayoutParams(w, h).apply {
+                leftMargin = dpToPx(8)
+            }
+
             setOnClickListener {
-                // 读取像素输入并应用
                 val input = edtPixel.text.toString().toIntOrNull()
                 if (input != null && input >= 5) {
                     val stepped = roundToNearest5(input)
@@ -117,7 +126,6 @@ class SettingsActivity : AppCompatActivity() {
                     setESize(clamped)
                     hideKeyboard()
                 } else {
-                    // 恢复为当前实际大小并提示（通过重写文本）
                     edtPixel.setText(eView.sizePx.toString())
                 }
             }
@@ -135,8 +143,11 @@ class SettingsActivity : AppCompatActivity() {
         val btnRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_HORIZONTAL
-            addView(btnMinus)
-            addView(btnPlus)
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.leftMargin = dpToPx(4)
+            lp.rightMargin = dpToPx(4)
+            addView(btnMinus, lp)
+            addView(btnPlus, lp)
         }
         root.addView(btnRow)
 
@@ -152,18 +163,60 @@ class SettingsActivity : AppCompatActivity() {
                     true
                 } else false
             }
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dpToPx(8)
+            }
         }
         root.addView(edtMeasured)
 
-        val btnConfirm = Button(this).apply { text = "自动校准" }
-        root.addView(btnConfirm)
+        val btnAuto = Button(this).apply { text = "自动校准" }
+        root.addView(btnAuto)
 
+        // --- 时长设置行（题目 + 答案）---
+        val timeRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dpToPx(12)
+                bottomMargin = dpToPx(12)
+            }
+        }
+
+        val tvQ = TextView(this).apply {
+            text = "题目(s)："
+            textSize = 14f
+        }
+        edtQuestionSec = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText(String.format("%.1f", defaultQuestionSec))
+            layoutParams = LinearLayout.LayoutParams(dpToPx(60), LinearLayout.LayoutParams.WRAP_CONTENT)
+            gravity = Gravity.CENTER
+        }
+
+        val tvA = TextView(this).apply {
+            text = " 答案(s)："
+            textSize = 14f
+        }
+        edtAnswerSec = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText(String.format("%.1f", defaultAnswerSec))
+            layoutParams = LinearLayout.LayoutParams(dpToPx(60), LinearLayout.LayoutParams.WRAP_CONTENT)
+            gravity = Gravity.CENTER
+        }
+
+        timeRow.addView(tvQ)
+        timeRow.addView(edtQuestionSec)
+        timeRow.addView(tvA)
+        timeRow.addView(edtAnswerSec)
+        root.addView(timeRow)
+
+        // --- 保存按钮 ---
         btnSave = Button(this).apply { text = "保存并返回" }
         root.addView(btnSave)
 
         setContentView(root)
 
-        // --- 按钮 + / - 逻辑（保持每次步进5px）---
+        // --- + / - 逻辑（步进5px）---
         btnPlus.setOnClickListener {
             var newSize = eView.sizePx + 5
             newSize = newSize.coerceAtMost(screenShortSide)
@@ -179,7 +232,7 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // --- 毫米校准按钮逻辑 ---
-        btnConfirm.setOnClickListener {
+        btnAuto.setOnClickListener {
             val measuredStr = edtMeasured.text.toString().trim().replace(',', '.')
             val measured = measuredStr.toDoubleOrNull()
             if (measured != null && measured > 0.0) {
@@ -192,9 +245,22 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        // --- 保存按钮 ---
+        // --- 保存按钮逻辑：把像素和时长写入 prefs 并返回 ---
         btnSave.setOnClickListener {
-            prefs.edit().putInt("e_size_px", eView.sizePx).apply()
+            val editor = prefs.edit()
+            editor.putInt("e_size_px", eView.sizePx)
+
+            // 保存时长（秒，float）
+            val q = edtQuestionSec.text.toString().trim().replace(',', '.').toFloatOrNull() ?: 10f
+            val a = edtAnswerSec.text.toString().trim().replace(',', '.').toFloatOrNull() ?: 10f
+            // 限定范围（至少0.5s）
+            val qClamped = q.coerceAtLeast(0.5f)
+            val aClamped = a.coerceAtLeast(0.5f)
+            editor.putFloat("duration_question_s", qClamped)
+            editor.putFloat("duration_answer_s", aClamped)
+
+            editor.apply()
+            hideKeyboard()
             finish()
         }
     }
@@ -215,7 +281,7 @@ class SettingsActivity : AppCompatActivity() {
 
     // 将 int 四舍五入到最接近的 5 的倍数
     private fun roundToNearest5(x: Int): Int {
-        return (Math.round(x / 5.0) * 5).toInt()
+        return (kotlin.math.round(x / 5.0).toInt() * 5)
     }
 
     // 隐藏键盘工具
@@ -223,5 +289,9 @@ class SettingsActivity : AppCompatActivity() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         val v = currentFocus ?: window.decorView
         imm?.hideSoftInputFromWindow(v.windowToken, 0)
+    }
+
+    private fun dpToPx(dp: Int): Int {
+        return (dp * resources.displayMetrics.density).roundToInt()
     }
 }

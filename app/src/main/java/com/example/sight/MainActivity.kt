@@ -29,7 +29,10 @@ class MainActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private var running = false
     private var showingAnswer = false
-    private val periodMs = 10_000L
+
+    // 两段时长（ms），会在 startSequence 里从 prefs 读取最新值
+    private var questionDurationMs: Long = 10_000L
+    private var answerDurationMs: Long = 10_000L
 
     // hold references for each row
     private val rowData = mutableListOf<Row>()
@@ -136,13 +139,11 @@ class MainActivity : AppCompatActivity() {
                 visibility = View.GONE
                 // layout size initially equal to E; will be resized when showing answers
                 layoutParams = FrameLayout.LayoutParams(baseSizePx, baseSizePx)
-                // put it on top layer
                 elevation = 100f
             }
 
             rowFrame.addView(eView)
             llContainer.addView(rowFrame)
-            // add arrow to overlay (top-level) so it's never clipped by rows
             overlayContainer.addView(arrow)
 
             rowData.add(Row(rowFrame, eView, arrow))
@@ -171,10 +172,10 @@ class MainActivity : AppCompatActivity() {
                     r.eView.rotationDeg = deg
                 }
 
-                // countdown for this phase
-                nextToggleTimeMs = SystemClock.uptimeMillis() + periodMs
+                // countdown for this phase = questionDurationMs
+                nextToggleTimeMs = SystemClock.uptimeMillis() + questionDurationMs
                 showingAnswer = true
-                handler.postDelayed(this, periodMs)
+                handler.postDelayed(this, questionDurationMs)
             } else {
                 // show answers overlayed; arrow drawing area = 3 * E size
                 rowData.forEachIndexed { idx, r ->
@@ -189,10 +190,8 @@ class MainActivity : AppCompatActivity() {
                     r.arrow.layoutParams = lp
                     r.arrow.requestLayout()
 
-                    // compute arrow position relative to overlay and set it
-                    // if views not measured yet, post to run after layout
-                    val eView = r.eView
-                    if (eView.width == 0 || overlayContainer.width == 0) {
+                    // position arrow in overlay; when view not measured, post
+                    if (r.eView.width == 0 || overlayContainer.width == 0) {
                         overlayContainer.post {
                             positionArrowInOverlay(r, idx, size)
                         }
@@ -200,14 +199,14 @@ class MainActivity : AppCompatActivity() {
                         positionArrowInOverlay(r, idx, size)
                     }
 
-                    // ensure arrow is on top
                     r.arrow.bringToFront()
                     r.arrow.invalidate()
                 }
 
-                nextToggleTimeMs = SystemClock.uptimeMillis() + periodMs
+                // countdown for answer phase
+                nextToggleTimeMs = SystemClock.uptimeMillis() + answerDurationMs
                 showingAnswer = false
-                handler.postDelayed(this, periodMs)
+                handler.postDelayed(this, answerDurationMs)
             }
         }
     }
@@ -220,13 +219,11 @@ class MainActivity : AppCompatActivity() {
         val eView = row.eView
         val arrow = row.arrow
 
-        // get absolute positions on screen
         val eLoc = IntArray(2)
         val ovLoc = IntArray(2)
         eView.getLocationOnScreen(eLoc)
         overlayContainer.getLocationOnScreen(ovLoc)
 
-        // eView top-left in overlay coordinates
         val eLeftInOverlay = (eLoc[0] - ovLoc[0]).toFloat()
         val eTopInOverlay = (eLoc[1] - ovLoc[1]).toFloat()
 
@@ -236,21 +233,15 @@ class MainActivity : AppCompatActivity() {
         val isLeft = (idx % 2 == 0)
 
         val x: Float = if (isLeft) {
-            // place arrow so its right edge aligns with eView left
             eLeftInOverlay - arrowSize.toFloat()
         } else {
-            // place arrow so its left edge aligns with eView right
             eLeftInOverlay + eW.toFloat()
         }
 
-        // vertical center the arrow relative to eView
         val y = eTopInOverlay + (eH - arrowSize) / 2.0f
 
-        // apply positions
         arrow.x = x
         arrow.y = y
-
-        // ensure arrow visible and on top
         arrow.visibility = View.VISIBLE
         arrow.bringToFront()
         arrow.invalidate()
@@ -270,10 +261,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun startSequence() {
         if (running) return
+        // read durations from prefs (seconds stored as float), convert to ms
+        val qSec = prefs.getFloat("duration_question_s", 10f)
+        val aSec = prefs.getFloat("duration_answer_s", 10f)
+        questionDurationMs = (qSec * 1000L).toLong()
+        answerDurationMs = (aSec * 1000L).toLong()
+
         running = true
         btnStartStop.text = "停止"
         showingAnswer = false
-        nextToggleTimeMs = SystemClock.uptimeMillis() + periodMs
+        nextToggleTimeMs = SystemClock.uptimeMillis() + questionDurationMs
         handler.post(tickRunnable)
         handler.post(countdownRunnable)
     }
@@ -294,9 +291,6 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Insert countdown TextView between start and settings buttons.
-     * If parent is ConstraintLayout we align bottom of countdown to bottom of the start button
-     * and place it between start and settings (startToEnd / endToStart). We also color it red.
-     * Otherwise we fall back to inserting a centered TextView above the main container and color it red.
      */
     private fun insertCountdownTextView() {
         try {
@@ -304,7 +298,7 @@ class MainActivity : AppCompatActivity() {
             val tv = TextView(this).apply {
                 id = View.generateViewId()
                 textSize = 16f
-                setTextColor(Color.RED) // red font
+                setTextColor(Color.RED)
                 text = ""
             }
 
@@ -315,14 +309,11 @@ class MainActivity : AppCompatActivity() {
                 ).apply {
                     startToEnd = btnStartStop.id
                     endToStart = btnSettings.id
-                    // align bottom with the start button bottom
                     bottomToBottom = btnStartStop.id
-                    topMargin = dpToPx(2)
                 }
                 parent.addView(tv, lp)
                 tvCountdown = tv
             } else {
-                // fallback: add as a centered text above llContainer (and move it down a bit)
                 val tvLp = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
@@ -355,9 +346,7 @@ class MainActivity : AppCompatActivity() {
      * to the activity's content view so overlay children (arrows) draw above everything.
      */
     private fun setupOverlayContainer() {
-        // get the root content view (the activity's content)
         val content = findViewById<ViewGroup>(android.R.id.content)
-        // create overlay
         overlayContainer = FrameLayout(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -365,16 +354,13 @@ class MainActivity : AppCompatActivity() {
             )
             clipChildren = false
             clipToPadding = false
-            // make sure it's on top (added last)
             isClickable = false
         }
-        // add overlay as the last child so it sits above the activity layout
         content.addView(overlayContainer)
     }
 
     /**
      * Best-effort: disable clipping for v (if ViewGroup) and for its ancestor viewgroups.
-     * Some platform parents may still clip (uncommon), but overlay solves most cases.
      */
     private fun disableClippingForViewAndParents(v: View) {
         if (v is ViewGroup) {
@@ -389,7 +375,6 @@ class MainActivity : AppCompatActivity() {
                 parent.clipChildren = false
                 parent.clipToPadding = false
             } catch (_: Exception) { }
-            // climb up
             parent = (parent as? View)?.parent
         }
     }
