@@ -76,7 +76,7 @@ class SettingsActivity : AppCompatActivity() {
 
         edtPixel = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER   // 只能输入整数
-            text = eView.sizePx.toString()
+            setText(initialSize.toString())
             // 失去焦点时，强制为5的倍数并生效
             setOnFocusChangeListener { _, hasFocus ->
                 if (!hasFocus) {
