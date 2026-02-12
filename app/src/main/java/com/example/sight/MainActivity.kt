@@ -127,4 +127,187 @@ class MainActivity : AppCompatActivity() {
             }
 
             rowFrame.addView(eView)
-            r
+            rowFrame.addView(arrow)
+
+            llContainer.addView(rowFrame)
+            rowData.add(Row(rowFrame, eView, arrow))
+        }
+    }
+
+    private val tickRunnable = object : Runnable {
+        override fun run() {
+            if (!running) return
+            if (!showingAnswer) {
+                // hide arrows (GONE) and reset arrow overlay size to E size
+                rowData.forEach { row ->
+                    row.arrow.visibility = View.GONE
+                    val lp = row.arrow.layoutParams
+                    lp.width = row.eView.sizePx
+                    lp.height = row.eView.sizePx
+                    row.arrow.layoutParams = lp
+                    row.arrow.requestLayout()
+                }
+
+                // randomize directions
+                rowData.forEach { r ->
+                    val deg = listOf(0, 90, 180, 270).random()
+                    r.eView.rotationDeg = deg
+                }
+
+                // countdown for this phase
+                nextToggleTimeMs = SystemClock.uptimeMillis() + periodMs
+                showingAnswer = true
+                handler.postDelayed(this, periodMs)
+            } else {
+                // show arrows overlayed; arrows size = 3 * E size (will overlay, not push)
+                rowData.forEachIndexed { idx, r ->
+                    r.arrow.visibility = View.VISIBLE
+                    r.arrow.directionDeg = r.eView.rotationDeg
+                    val size = r.eView.sizePx * 3
+                    val lp = r.arrow.layoutParams
+                    lp.width = size
+                    lp.height = size
+                    r.arrow.layoutParams = lp
+                    r.arrow.requestLayout()
+
+                    // Position arrow relative to the E center:
+                    // compute eView left within the row frame (centered)
+                    // eLeft = (container.width - eWidth)/2
+                    val container = r.container
+                    // if container.width is 0 it's not yet measured; post a runnable
+                    if (container.width == 0) {
+                        container.post {
+                            positionArrow(r, idx, size)
+                        }
+                    } else {
+                        positionArrow(r, idx, size)
+                    }
+                }
+
+                nextToggleTimeMs = SystemClock.uptimeMillis() + periodMs
+                showingAnswer = false
+                handler.postDelayed(this, periodMs)
+            }
+        }
+    }
+
+    // position arrow overlay left or right of the centered E within the row frame
+    private fun positionArrow(row: Row, idx: Int, arrowSize: Int) {
+        val container = row.container
+        val e = row.eView
+        // center coordinates and E left within container
+        val containerW = container.width
+        val eW = e.width
+        if (containerW == 0 || eW == 0) return
+        val eLeft = (containerW - eW) / 2 // left position of E within container
+        // left arrows for idx 0,2,4,6
+        val isLeft = (idx % 2 == 0)
+        val arrow = row.arrow
+        if (isLeft) {
+            // put arrow to the left of E: x = eLeft - arrowSize
+            val x = (eLeft - arrowSize).toFloat()
+            arrow.x = x
+        } else {
+            // put arrow to right: x = eLeft + eW
+            val x = (eLeft + eW).toFloat()
+            arrow.x = x
+        }
+    }
+
+    private val countdownRunnable = object : Runnable {
+        override fun run() {
+            if (!running) return
+            val now = SystemClock.uptimeMillis()
+            val remainMs = (nextToggleTimeMs - now).coerceAtLeast(0L)
+            val remainSeconds = remainMs.toDouble() / 1000.0
+            val text = String.format(Locale.getDefault(), "%.1fs", remainSeconds)
+            tvCountdown?.text = text
+            handler.postDelayed(this, countdownUpdateInterval)
+        }
+    }
+
+    private fun startSequence() {
+        if (running) return
+        running = true
+        btnStartStop.text = "停止"
+        showingAnswer = false
+        nextToggleTimeMs = SystemClock.uptimeMillis() + periodMs
+        handler.post(tickRunnable)
+        handler.post(countdownRunnable)
+    }
+
+    private fun stopSequence() {
+        running = false
+        btnStartStop.text = "开始"
+        handler.removeCallbacks(tickRunnable)
+        handler.removeCallbacks(countdownRunnable)
+        rowData.forEach { it.arrow.visibility = View.GONE }
+        tvCountdown?.text = ""
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        handler.removeCallbacksAndMessages(null)
+    }
+
+    /**
+     * Insert countdown TextView between start and settings buttons.
+     * If parent is ConstraintLayout we align bottom of countdown to bottom of the start button
+     * and place it between start and settings (startToEnd / endToStart). We also color it red.
+     * Otherwise we fall back to inserting a centered TextView above the main container and color it red.
+     */
+    private fun insertCountdownTextView() {
+        try {
+            val parent = btnStartStop.parent
+            val tv = TextView(this).apply {
+                id = View.generateViewId()
+                textSize = 16f
+                setTextColor(Color.RED) // red font
+                text = ""
+            }
+
+            if (parent is ConstraintLayout) {
+                val lp = ConstraintLayout.LayoutParams(
+                    ConstraintLayout.LayoutParams.WRAP_CONTENT,
+                    ConstraintLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    startToEnd = btnStartStop.id
+                    endToStart = btnSettings.id
+                    // align bottom with the start button bottom
+                    bottomToBottom = btnStartStop.id
+                    // tiny margin downward so it visually sits a bit lower (0 dp is fine)
+                    topMargin = dpToPx(2)
+                }
+                parent.addView(tv, lp)
+                tvCountdown = tv
+            } else {
+                // fallback: add as a centered text above llContainer (and move it down a bit)
+                val tvLp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = dpToPx(4)
+                }
+                val root = llContainer.parent
+                if (root is LinearLayout) {
+                    val index = root.indexOfChild(llContainer)
+                    root.addView(tv, index)
+                    tv.layoutParams = tvLp
+                    tv.gravity = Gravity.CENTER
+                    tvCountdown = tv
+                } else {
+                    // som fallback, add to container
+                    llContainer.addView(tv, 0)
+                    tvCountdown = tv
+                }
+            }
+        } catch (ex: Exception) {
+            // ignore but ensure tvCountdown nullable
+            tvCountdown = null
+        }
+    }
+
+    private fun dpToPx(dp: Int): Int {
+        return (dp * resources.displayMetrics.density).roundToInt()
+    }
+}
