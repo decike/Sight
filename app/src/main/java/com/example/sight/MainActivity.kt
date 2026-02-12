@@ -10,6 +10,7 @@ import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewParent
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -128,7 +129,7 @@ class MainActivity : AppCompatActivity() {
                 visibility = View.GONE
                 // default overlay size = E size (won't push anything)
                 layoutParams = FrameLayout.LayoutParams(baseSizePx, baseSizePx).apply {
-                    // initial gravity center vertical; we will reposition via arrow.x / arrow.y
+                    // initial position; we'll reposition it when showing answers
                     gravity = Gravity.CENTER_VERTICAL
                 }
             }
@@ -330,18 +331,23 @@ class MainActivity : AppCompatActivity() {
      * This ensures large overlay children (the arrows) won't be cropped by parent views.
      */
     private fun disableClippingForViewAndParents(v: View) {
-        var p: ViewParent? = v.parent
-        // also set for the view itself (if it's a ViewGroup)
+        // make sure the view itself (if a ViewGroup) does not clip
         if (v is ViewGroup) {
-            v.clipChildren = false
-            v.clipToPadding = false
-        }
-        while (p is ViewGroup) {
             try {
-                p.clipChildren = false
-                p.clipToPadding = false
+                v.clipChildren = false
+                v.clipToPadding = false
             } catch (_: Exception) { /* ignore */ }
-            p = p.parent
+        }
+
+        // iterate up the parent chain; for each ViewGroup disable clipping
+        var parent: ViewParent? = v.parent
+        while (parent is ViewGroup) {
+            try {
+                parent.clipChildren = false
+                parent.clipToPadding = false
+            } catch (_: Exception) { /* ignore */ }
+            // move up: parent may be a View (subclass of ViewParent) so cast to View to access .parent
+            parent = (parent as? View)?.parent
         }
     }
 }
