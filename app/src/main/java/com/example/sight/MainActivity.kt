@@ -76,7 +76,7 @@ class MainActivity : AppCompatActivity() {
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
-                    topMargin = 24
+                    topMargin = baseSizePx
                 }
                 gravity = Gravity.CENTER
             }
@@ -95,8 +95,8 @@ class MainActivity : AppCompatActivity() {
             if (arrowOnLeft) {
                 // arrow then spacer then eView
                 val lpA = LinearLayout.LayoutParams(
-                    (baseSizePx * 3),
-                    (baseSizePx * 3)
+                    (baseSizePx * 2),
+                    (baseSizePx * 2)
                 )
                 arrow.layoutParams = lpA
                 row.addView(arrow)
@@ -104,8 +104,8 @@ class MainActivity : AppCompatActivity() {
             } else {
                 // eView then arrow
                 val lpA = LinearLayout.LayoutParams(
-                    (baseSizePx * 3),
-                    (baseSizePx * 3)
+                    (baseSizePx * 2),
+                    (baseSizePx * 2)
                 )
                 arrow.layoutParams = lpA
                 row.addView(eView)
@@ -136,8 +136,8 @@ class MainActivity : AppCompatActivity() {
                     // arrow visible and oriented as E
                     r.arrow.visibility = View.VISIBLE
                     r.arrow.directionDeg = r.eView.rotationDeg
-                    // set arrow size = 3 * E size (update layout params)
-                    val size = r.eView.sizePx * 3
+                    // set arrow size = 2 * E size (update layout params)
+                    val size = r.eView.sizePx * 2
                     r.arrow.layoutParams.width = size
                     r.arrow.layoutParams.height = size
                     r.arrow.requestLayout()
