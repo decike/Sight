@@ -26,7 +26,7 @@ class SettingsActivity : AppCompatActivity() {
 
     // 像素输入框
     private lateinit var edtPixel: EditText
-    // 像素确认按钮（新增）
+    // 像素确认按钮
     private lateinit var btnPixelConfirm: Button
 
     // 屏幕短边（像素）
@@ -80,21 +80,34 @@ class SettingsActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_NUMBER   // 只能输入整数
             setText(initialSize.toString())
             imeOptions = EditorInfo.IME_ACTION_DONE
-            // 不在这里执行确认：改为按确认按钮生效（按 Done 只收起键盘）
+            // 按 Done 收起键盘
             setOnEditorActionListener { v, actionId, _ ->
                 if (actionId == EditorInfo.IME_ACTION_DONE) {
-                    // 仅隐藏键盘，确认由按钮负责
                     hideKeyboard()
                     v.clearFocus()
                     true
                 } else false
             }
-            // 不在失去焦点时自动应用，确认由按钮触发
+            // 确认由按钮触发
             onFocusChangeListener = null
         }
 
         btnPixelConfirm = Button(this).apply {
             text = "确认"
+            // 文字大小由默认值改为 12sp
+            setTextSize(12f)
+            // 内边距从默认大幅减小，单位 dp 转 px
+            val density = resources.displayMetrics.density
+            setPadding(
+                (8 * density).toInt(),
+                (4 * density).toInt(),
+                (8 * density).toInt(),
+                (4 * density).toInt()
+            )
+            // 清除系统默认的最小宽高，允许按钮收缩
+            minWidth = 0
+            minHeight = 0
+
             setOnClickListener {
                 // 读取像素输入并应用
                 val input = edtPixel.text.toString().toIntOrNull()
@@ -142,7 +155,7 @@ class SettingsActivity : AppCompatActivity() {
         }
         root.addView(edtMeasured)
 
-        val btnConfirm = Button(this).apply { text = "确认以 7.27mm 校准" }
+        val btnConfirm = Button(this).apply { text = "自动校准" }
         root.addView(btnConfirm)
 
         btnSave = Button(this).apply { text = "保存并返回" }
