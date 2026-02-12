@@ -37,13 +37,13 @@ jobs:
           mkdir -p dist
           APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
           echo "Found APK: $APK_PATH"
-          cp "$APK_PATH" "dist/Sight-${{ github.ref_name }}.apk"
+          cp "$APK_PATH" "dist/Sight-${{ github.ref_name }}-release.apk"
 
 
       - name: Create GitHub Release and upload APK
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
-          files: dist/Sight-${{ github.ref_name }}.apk
+          files: dist/Sight-${{ github.ref_name }}-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
