@@ -1,4 +1,4 @@
-package com.example.sight
+package com.decike.sight
 
 import android.content.Intent
 import android.content.SharedPreferences

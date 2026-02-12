@@ -3,7 +3,7 @@ name: Build Android APK and attach to Release
 on:
   push:
     tags:
-      - 'v*.*.*'   # run only when a tag like v0.1.0 is pushed
+      - 'v*.*.*'
 
 jobs:
   build:
@@ -28,9 +28,19 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Build Release APK
+      # 新增：从 Secrets 还原签名密钥文件
+      - name: Decode Keystore
         run: |
-          gradle assembleRelease --no-daemon --stacktrace
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > decike_keystore.jks
+        shell: bash
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}   # 用于判断是否启用 release 签名
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: Locate and copy APK for release
         run: |
@@ -38,7 +48,6 @@ jobs:
           APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
           echo "Found APK: $APK_PATH"
           cp "$APK_PATH" "dist/Sight-${{ github.ref_name }}-release.apk"
-
 
       - name: Create GitHub Release and upload APK
         uses: softprops/action-gh-release@v1
