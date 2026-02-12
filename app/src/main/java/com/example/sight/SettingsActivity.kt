@@ -1,12 +1,17 @@
 package com.example.sight
 
+import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.text.Editable
 import android.text.InputType
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -22,16 +27,19 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var btnMinus: Button
     private lateinit var btnSave: Button
 
-    // 新增：像素输入框
+    // 像素输入框
     private lateinit var edtPixel: EditText
 
-    private var scaleDetector: ScaleGestureDetector? = null
+    private lateinit var scaleDetector: ScaleGestureDetector
 
     // 屏幕短边（像素）
     private val screenShortSide: Int by lazy {
         val metrics = resources.displayMetrics
         minOf(metrics.widthPixels, metrics.heightPixels)
     }
+
+    // 缩放起始基准（用于避免累积误差）
+    private var scaleStartSize = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,6 +53,16 @@ class SettingsActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 24, 24, 24)
             gravity = Gravity.CENTER_HORIZONTAL
+            // 关键：使根布局可获取焦点且可点击，以便点击空白处可清除 EditText 焦点
+            isFocusable = true
+            isFocusableInTouchMode = true
+            isClickable = true
+        }
+
+        // 点击空白处清除焦点并隐藏键盘
+        root.setOnClickListener {
+            currentFocus?.clearFocus()
+            hideKeyboard()
         }
 
         // --- E 视图 ---
@@ -54,9 +72,15 @@ class SettingsActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER_HORIZONTAL
             }
         }
+        // 把手势绑定到 eView，避免 Activity.onTouchEvent 在 EditText 焦点时收不到事件
+        eView.setOnTouchListener { _, ev ->
+            scaleDetector.onTouchEvent(ev)
+            // 返回 false 以便允许后续事件（如点击）继续传播；如果你要消费事件可返回 true
+            false
+        }
         root.addView(eView)
 
-        // --- 新增：像素输入行（标签 + 输入框）---
+        // --- 像素输入行（标签 + 输入框）---
         val pixelRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -77,26 +101,39 @@ class SettingsActivity : AppCompatActivity() {
         edtPixel = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER   // 只能输入整数
             setText(initialSize.toString())
+
+            // IME action Done - 按键盘完成时也会提交
+            imeOptions = EditorInfo.IME_ACTION_DONE
+            setOnEditorActionListener { v, actionId, _ ->
+                if (actionId == EditorInfo.IME_ACTION_DONE) {
+                    v.clearFocus()  // 触发下面的 onFocusChange
+                    hideKeyboard()
+                    true
+                } else false
+            }
+
             // 失去焦点时，强制为5的倍数并生效
-            setOnFocusChangeListener { _, hasFocus ->
+            onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
                 if (!hasFocus) {
                     val input = text.toString().toIntOrNull()
                     if (input != null && input >= 5) {
-                        // 强制为5的倍数
-                        val stepped = ((input + 2) / 5) * 5
-                        eView.sizePx = stepped
-                        // 更新输入框显示
-                        setText(stepped.toString())
-                        // 更新 E 视图布局参数（保持居中）
-                        eView.layoutParams.width = stepped
-                        eView.layoutParams.height = stepped
-                        eView.requestLayout()
+                        val stepped = roundToNearest5(input)
+                        setESize(stepped)
                     } else {
-                        // 无效输入，恢复为当前实际大小
+                        // 恢复为当前实际大小
                         setText(eView.sizePx.toString())
                     }
                 }
             }
+
+            // 同时，为了更好的交互，添加 TextWatcher（可选：实时预览）
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: Editable?) {
+                    // 不强制每一字符都更新 E（会很跳），这里不作自动更新，依赖失焦/Done 提交
+                }
+            })
         }
 
         pixelRow.addView(tvPixelLabel)
@@ -119,6 +156,15 @@ class SettingsActivity : AppCompatActivity() {
         edtMeasured = EditText(this).apply {
             hint = "输入当前 E 的毫米尺寸 (用尺子量)"
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            // 方便用户按完成键提交
+            imeOptions = EditorInfo.IME_ACTION_DONE
+            setOnEditorActionListener { v, actionId, _ ->
+                if (actionId == EditorInfo.IME_ACTION_DONE) {
+                    v.clearFocus()
+                    hideKeyboard()
+                    true
+                } else false
+            }
         }
         root.addView(edtMeasured)
 
@@ -130,40 +176,45 @@ class SettingsActivity : AppCompatActivity() {
 
         setContentView(root)
 
-        // --- 手势缩放 ---
+        // --- 手势缩放（改为基于 scaleStartSize 的实现，避免漂移） ---
         scaleDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            private var accumulated = 1.0f
+            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+                scaleStartSize = eView.sizePx
+                return true
+            }
+
             override fun onScale(detector: ScaleGestureDetector): Boolean {
-                val scale = detector.scaleFactor
-                accumulated *= scale
-                val newSize = (eView.sizePx * accumulated).toInt().coerceAtLeast(5)
+                val newSizeFloat = scaleStartSize * detector.scaleFactor
+                val newSize = newSizeFloat.toInt().coerceAtLeast(5)
                 val clamped = newSize.coerceAtMost(screenShortSide)
-                val stepped = ((clamped + 2) / 5) * 5   // 强制5的倍数
-                setESize(stepped)  // 统一更新方法
+                val stepped = roundToNearest5(clamped)
+                setESize(stepped)
                 return true
             }
         })
 
         // --- 按钮 + / - ---
         btnPlus.setOnClickListener {
-            var newSize = ((eView.sizePx + 5 + 4) / 5) * 5   // 强制5的倍数
+            var newSize = eView.sizePx + 5
             newSize = newSize.coerceAtMost(screenShortSide)
+            newSize = roundToNearest5(newSize)
             setESize(newSize)
         }
 
         btnMinus.setOnClickListener {
-            var newSize = ((eView.sizePx - 5) / 5) * 5
+            var newSize = eView.sizePx - 5
             newSize = newSize.coerceAtLeast(5)
+            newSize = roundToNearest5(newSize)
             setESize(newSize)
         }
 
         // --- 毫米校准 ---
         btnConfirm.setOnClickListener {
-            val measuredStr = edtMeasured.text.toString()
+            val measuredStr = edtMeasured.text.toString().trim().replace(',', '.')
             val measured = measuredStr.toDoubleOrNull()
             if (measured != null && measured > 0.0) {
                 val newPx = (eView.sizePx * 7.27 / measured).toInt()
-                val stepped = ((newPx + 2) / 5) * 5
+                val stepped = roundToNearest5(newPx)
                 val clamped = stepped.coerceAtLeast(5).coerceAtMost(screenShortSide)
                 setESize(clamped)
             } else {
@@ -182,17 +233,33 @@ class SettingsActivity : AppCompatActivity() {
      * 统一更新 E 视图大小、布局参数和像素输入框
      */
     private fun setESize(newSize: Int) {
-        eView.sizePx = newSize
+        val final = newSize.coerceAtLeast(5).coerceAtMost(screenShortSide)
+        eView.sizePx = final
         // 更新布局参数（保持居中）
-        eView.layoutParams.width = newSize
-        eView.layoutParams.height = newSize
+        eView.layoutParams.width = final
+        eView.layoutParams.height = final
         eView.requestLayout()
-        // 同步像素输入框
-        edtPixel.setText(newSize.toString())
+        // 同步像素输入框（但避免触发焦点变化）
+        if (edtPixel.text.toString() != final.toString()) {
+            edtPixel.setText(final.toString())
+        }
     }
 
+    // 将 int 四舍五入到最接近的 5 的倍数
+    private fun roundToNearest5(x: Int): Int {
+        return (Math.round(x / 5.0) * 5).toInt()
+    }
+
+    // 隐藏键盘工具
+    private fun hideKeyboard() {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        val v = currentFocus ?: window.decorView
+        imm?.hideSoftInputFromWindow(v.windowToken, 0)
+    }
+
+    // Activity 的 onTouchEvent 保持默认行为
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        scaleDetector?.onTouchEvent(event)
-        return true
+        // 如果你还要在 Activity 级别处理手势，这里可以调用 scaleDetector.onTouchEvent(event)
+        return super.onTouchEvent(event)
     }
 }
