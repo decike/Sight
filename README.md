@@ -17,7 +17,7 @@ Sight 是一款轻量级、免设备的视力自测工具。利用手机屏幕�
 ## 📲 下载与安装
 
 ### 获取应用
-从 [Releases](https://github.com/decike/Sight/releases) 页面下载最新版本的 `Sight-vX.X.X.apk`。
+从 [Releases](https://github.com/decike/Sight/releases) 页面下载最新版本的 `Sight-vX.X.X-release.apk`。
 
 ### 安装说明
 ⚠️ **已知问题：应用尚未完成签名，安装时可能提示“未知来源”或“签名不一致”。**
@@ -79,7 +79,7 @@ Sight 是一款轻量级、免设备的视力自测工具。利用手机屏幕�
 ## 🛠️ 开发者说明
 
 ### 构建与签名
-当前项目尚未配置正式签名，后续**也许**会完善 ``。<span style="background:black; color:black;">（应该会的）</span>
+当前项目尚未配置正式签名，后续会完善。
 
 ---
 
